@@ -28,11 +28,11 @@ library
                      , bytestring                      == 0.10.*
                      , bifunctors                      >= 4.2        && < 5.3
                      , conduit                         == 1.2.*
-                     , conduit-extra                   == 1.1.*
-                     , directory                       == 1.2.*
+                     , conduit-extra                   >= 1.1.13     && < 1.2
+                     , directory                       >= 1.2        && < 1.4
                      , exceptions                      >= 0.6        && < 0.9
                      , filepath                        >= 1.3        && < 1.5
-                     , http-client                     >= 0.4.18     && < 0.5
+                     , http-client                     == 0.5.*
                      , http-types                      == 0.8.*
                      , mtl                             >= 2.1        && < 2.3
                      , process                         >= 1.2        && < 1.5
@@ -44,7 +44,7 @@ library
                      , unix                            == 2.7.*
                      , async                           >= 2.0        && < 2.2
                      , retry                           == 0.7.*
-                     , lens                            >= 4.8        && < 4.15
+                     , lens                            >= 4.8        && < 4.16
                      , SafeSemaphore                   == 0.10.*
                      , unix-bytestring                 == 0.3.7.*
                      , time                            >= 1.4        && < 1.7
@@ -87,7 +87,7 @@ test-suite test
                      , ambiata-p
                      , ambiata-x-eithert
                      , conduit
-                     , directory                       == 1.2.*
+                     , directory
                      , exceptions
                      , filepath
                      , http-client
@@ -126,7 +126,7 @@ test-suite test-io
                      , bytestring
                      , conduit
                      , cryptohash
-                     , directory                       == 1.2.*
+                     , directory
                      , ambiata-twine
                      , exceptions
                      , filepath
@@ -165,7 +165,7 @@ test-suite test-reliability
                      , bytestring
                      , conduit
                      , cryptohash
-                     , directory                       == 1.2.*
+                     , directory
                      , exceptions
                      , filepath
                      , http-client
@@ -196,8 +196,7 @@ benchmark bench
                      , ambiata-p
                      , ambiata-x-eithert
                      , criterion                       == 1.1.*
-                     -- FIX for conduit-extra https://github.com/snoyberg/conduit/pull/261
-                     , conduit-extra                   == 1.1.11
+                     , conduit-extra                   >= 1.1.13     && < 1.2
                      , exceptions                      == 0.8.*
                      , QuickCheck                      >= 2.8.2      && < 2.9
                      , quickcheck-instances            == 0.3.*
