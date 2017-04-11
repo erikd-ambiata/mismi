@@ -14,3 +14,15 @@
 	path = lib/twine
 	url = https://github.com/ambiata/twine
 	pushurl = git@github.com:ambiata/twine
+[submodule "lib/network"]
+	path = lib/network
+	url = https://github.com/erikd/network
+[submodule "lib/tls"]
+	path = lib/tls
+	url = https://github.com/erikd/hs-tls
+[submodule "lib/connection"]
+	path = lib/connection
+	url = https://github.com/erikd/hs-connection
+[submodule "lib/http-client"]
+	path = lib/http-client
+	url = https://github.com/erikd/http-client
