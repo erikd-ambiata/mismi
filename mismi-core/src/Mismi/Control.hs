@@ -166,7 +166,7 @@ checkException v f =
         ResponseBodyTooShort _ _ ->
           True
         InternalException _ ->
-          True
+          trace "mismi-core:Mismi.Contol.checkException:InternalException" True
         InvalidStatusLine _ ->
           True
         InvalidHeader _ ->
