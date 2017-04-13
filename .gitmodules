@@ -26,3 +26,6 @@
 [submodule "lib/http-client"]
 	path = lib/http-client
 	url = https://github.com/erikd/http-client
+[submodule "lib/amazonka"]
+	path = lib/amazonka
+	url = https://github.com/erikd/amazonka
