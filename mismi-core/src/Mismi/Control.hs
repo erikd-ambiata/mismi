@@ -194,7 +194,7 @@ checkException v f =
           False
 
         _ ->
-          f
+          trace ("checkException: " <> show content) f
 
 handle404 :: AWS a -> AWS (Maybe a)
 handle404 =
