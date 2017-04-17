@@ -147,11 +147,11 @@ configureRetries i e = e & envRetryCheck .~ err
       checkException v $ (e ^. envRetryCheck) c v
 
 checkException :: HttpException -> Bool -> Bool
-checkException v f =
+checkException v _f =
   case v of
     InvalidUrlException _ _ -> False
     HttpExceptionRequest _req content ->
-      case content of
+      case trace ("mismi-core:Mismi.Contol.checkException: " <> show content) content of
         NoResponseDataReceived ->
           True
         StatusCodeException resp _ ->
@@ -192,9 +192,11 @@ checkException v f =
           False
         InvalidProxyEnvironmentVariable _ _ ->
           False
+        ConnectionClosed ->
+          True
 
-        _ ->
-          trace ("checkException: " <> show content) f
+--        _ ->
+--          trace ("checkException: " <> show content) f
 
 handle404 :: AWS a -> AWS (Maybe a)
 handle404 =

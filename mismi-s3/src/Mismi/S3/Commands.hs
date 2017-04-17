@@ -105,7 +105,7 @@ import qualified Network.AWS.S3 as A
 
 import           P
 
-import           System.IO (IO, IOMode (..), SeekMode (..))
+import           System.IO (IO, IOMode (..), SeekMode (..), putStrLn)
 import           System.IO (hFileSize, hSetFileSize, withFile)
 import           System.Directory (createDirectoryIfMissing, doesFileExist)
 import           System.FilePath (FilePath, takeDirectory)
@@ -584,6 +584,7 @@ multipartDownload source destination sz chunk fork = bimapEitherT MultipartError
 
 downloadWithRange :: Address -> Int -> Int -> FilePath -> AWS ()
 downloadWithRange a start end dest = withRetries 5 $ do
+  liftIO . putStrLn $ mconcat ["downloadWithRange: ", show a, " ", show start, " ", show end]
   r <- send $ f' A.getObject a &
     A.goRange .~ (Just $ bytesRange start end)
 
