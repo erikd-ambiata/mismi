@@ -63,6 +63,7 @@ module Mismi.S3.Commands (
 import           Control.Arrow ((***))
 
 import           Control.Exception (SomeException)
+import           Control.Concurrent (threadDelay)
 import           Control.Lens ((.~), (^.), to, view)
 import           Control.Monad.Catch (throwM, onException, try)
 import           Control.Monad.Trans.Class (lift)
@@ -119,6 +120,8 @@ import           Twine.Parallel (RunError (..), consume)
 import           X.Control.Monad.Trans.Either (EitherT, eitherT, left, right, bimapEitherT, runEitherT, newEitherT)
 
 import qualified X.Data.Conduit.Binary as XB
+
+import           GHC.Stack
 
 headObject :: Address -> AWS (Maybe HeadObjectResponse)
 headObject a =
@@ -541,7 +544,7 @@ hoistDownloadError e =
     MultipartError (BlowUpError a) ->
       throwM a
 
-download :: Address -> FilePath -> EitherT DownloadError AWS ()
+download :: HasCallStack => Address -> FilePath -> EitherT DownloadError AWS ()
 download =
   downloadWithMode Fail
 
@@ -549,7 +552,7 @@ downloadOrFail :: Address -> FilePath -> AWS ()
 downloadOrFail a f =
   eitherT hoistDownloadError pure $ download a f
 
-downloadWithMode :: WriteMode -> Address -> FilePath -> EitherT DownloadError AWS ()
+downloadWithMode :: HasCallStack => WriteMode -> Address -> FilePath -> EitherT DownloadError AWS ()
 downloadWithMode mode a f = do
   when (mode == Fail) . whenM (liftIO $ doesFileExist f) . left $ DownloadDestinationExists f
   liftIO $ createDirectoryIfMissing True (takeDirectory f)
@@ -561,7 +564,7 @@ downloadWithMode mode a f = do
     then multipartDownload a f sz 100 100
     else downloadSingle a f
 
-downloadWithModeOrFail :: WriteMode -> Address -> FilePath -> AWS ()
+downloadWithModeOrFail :: HasCallStack => WriteMode -> Address -> FilePath -> AWS ()
 downloadWithModeOrFail m a f =
   eitherT hoistDownloadError pure $ downloadWithMode m a f
 
@@ -571,7 +574,7 @@ downloadSingle a f = do
   liftIO . withRetries 5 . withFileSafe f $ \p ->
     runResourceT . ($$+- sinkFile p) $ r ^. A.gorsBody ^. to _streamBody
 
-multipartDownload :: Address -> FilePath -> Int -> Integer -> Int -> EitherT DownloadError AWS ()
+multipartDownload :: HasCallStack => Address -> FilePath -> Int -> Integer -> Int -> EitherT DownloadError AWS ()
 multipartDownload source destination sz chunk fork = bimapEitherT MultipartError id $ do
   e <- ask
   let chunks = calculateChunks sz (fromInteger $ chunk * 1024 * 1024)
@@ -583,10 +586,9 @@ multipartDownload source destination sz chunk fork = bimapEitherT MultipartError
       consume (\q -> mapM (writeQueue q) chunks) fork $ \(o, c, _) ->
         runEitherT . runAWS e $ downloadWithRange source o (o + c) f
 
-downloadWithRange :: Address -> Int -> Int -> FilePath -> AWS ()
+downloadWithRange :: HasCallStack => Address -> Int -> Int -> FilePath -> AWS ()
 downloadWithRange a start end dest = exceptionRetry 5 $ do
 
-  liftIO . putStrLn $ mconcat ["downloadWithRange: ", show start, " ", show end]
   r <- send $ f' A.getObject a &
     A.goRange .~ (Just $ bytesRange start end)
 
@@ -598,17 +600,20 @@ downloadWithRange a start end dest = exceptionRetry 5 $ do
     let sink = awaitForever $ liftIO . UBS.fdWrite fd
     runResourceT $ source $$+- sink
     closeFd fd
+  where
+    exceptionRetry :: Int -> AWS a -> AWS a
+    exceptionRetry rcount action = do
+      eea <- try action
+      case eea of
+        Right res -> pure res
+        Left e
+          | rcount <= 1 -> throwM e
+          | otherwise -> do
+             liftIO $ do
+                putStrLn $ mconcat [ "Retrying range ", show start, " ", show end, "after :", show (e :: SomeException)]
+                threadDelay $ 10 * 1000 * 1000
 
-exceptionRetry :: Int -> AWS a -> AWS a
-exceptionRetry count action = do
-  eea <- try action
-  case eea of
-    Right a -> pure a
-    Left e
-      | count <= 1 -> throwM e
-      | otherwise -> do
-             liftIO . putStrLn $ "Retrying after :" <> show (e :: SomeException)
-             exceptionRetry (count - 1) action
+             exceptionRetry (rcount - 1) action
 
 listMultipartParts :: Address -> Text -> AWS [Part]
 listMultipartParts a uploadId = do
