@@ -590,10 +590,10 @@ thirySeconds = 30 * 1000 * 1000
 
 downloadWithRange :: Address -> Int -> Int -> FilePath -> AWS ()
 downloadWithRange a start end dest =
-  -- Here we retry IOExceptions that escape from http-client/http-conduit.
-  ioExceptionRetry (fullJitterBackoff thirySeconds) 5 $
-    -- Here we retry `HttpException`s from http-client/http-conduit.
-    withRetries 5 $ do
+  -- Here we retry `HttpException`s from http-client/http-conduit.
+  withRetries 5 $
+    -- Here we retry IOExceptions that escape from http-client/http-conduit.
+    ioExceptionRetry (fullJitterBackoff thirySeconds) 5 $ do
 
       r <- send $ f' A.getObject a &
             A.goRange .~ (Just $ bytesRange start end)
