@@ -62,7 +62,7 @@ module Mismi.S3.Commands (
 
 import           Control.Arrow ((***))
 
-import           Control.Exception (SomeException)
+import           Control.Exception (IOException)
 import           Control.Concurrent (threadDelay)
 import           Control.Lens ((.~), (^.), to, view)
 import           Control.Monad.Catch (throwM, onException, try)
@@ -610,9 +610,8 @@ downloadWithRange a start end dest = exceptionRetry 5 $ do
           | rcount <= 1 -> throwM e
           | otherwise -> do
              liftIO $ do
-                putStrLn $ mconcat [ "Retrying range ", show start, " ", show end, "after :", show (e :: SomeException)]
+                putStrLn $ mconcat [ "\n----------------------\nRetrying (", show rcount, " remaining) range ", show start, " ", show end, " after :\n", show (e :: IOException)]
                 threadDelay $ 10 * 1000 * 1000
-
              exceptionRetry (rcount - 1) action
 
 listMultipartParts :: Address -> Text -> AWS [Part]
