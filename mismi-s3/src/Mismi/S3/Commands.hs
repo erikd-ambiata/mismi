@@ -587,8 +587,11 @@ multipartDownload source destination sz chunk fork = bimapEitherT MultipartError
       consume (\q -> mapM (writeQueue q) chunks) fork $ \(o, c, _) ->
         runEitherT . runAWS e $ downloadWithRange source o (o + c) f
 
+thirySeconds :: Int
+thirySeconds = 30 * 1000 * 1000
+
 downloadWithRange :: HasCallStack => Address -> Int -> Int -> FilePath -> AWS ()
-downloadWithRange a start end dest = ioExceptionRetry (fullJitterBackoff 500000) 5 $ do
+downloadWithRange a start end dest = ioExceptionRetry (fullJitterBackoff thirySeconds) 5 $ do
 
   r <- send $ f' A.getObject a &
     A.goRange .~ (Just $ bytesRange start end)
@@ -607,7 +610,7 @@ downloadWithRange a start end dest = ioExceptionRetry (fullJitterBackoff 500000)
       let
         condition s =
           Handler $ \(_ :: IOException) -> do
-            liftIO . putStrLn$ mconcat [ "Retrying : ", show start, " ", show end ]
+            liftIO . putStrLn$ mconcat [ "Retry ", show (rsIterNumber s), " : ", show start, " ", show end ]
             pure $ rsIterNumber s <= n
 
       recovering policy [condition] $ \_ ->
