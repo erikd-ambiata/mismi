@@ -63,13 +63,14 @@ module Mismi.S3.Commands (
 import           Control.Arrow ((***))
 
 import           Control.Exception (IOException)
-import           Control.Concurrent (threadDelay)
 import           Control.Lens ((.~), (^.), to, view)
-import           Control.Monad.Catch (throwM, onException, try)
+import           Control.Monad.Catch (Handler (..), MonadCatch, MonadMask, throwM, onException)
+import           Control.Monad.IO.Class (MonadIO)
 import           Control.Monad.Trans.Class (lift)
 import           Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import           Control.Monad.Reader (ask)
 import           Control.Monad.IO.Class (liftIO)
+import           Control.Retry (RetryPolicyM, fullJitterBackoff, recovering, rsIterNumber)
 
 import qualified Data.ByteString as BS
 import           Data.Conduit (Conduit, Source, ResumableSource)
@@ -587,7 +588,7 @@ multipartDownload source destination sz chunk fork = bimapEitherT MultipartError
         runEitherT . runAWS e $ downloadWithRange source o (o + c) f
 
 downloadWithRange :: HasCallStack => Address -> Int -> Int -> FilePath -> AWS ()
-downloadWithRange a start end dest = exceptionRetry 5 $ do
+downloadWithRange a start end dest = exceptionRetry (fullJitterBackoff 500000) 5 $ do
 
   r <- send $ f' A.getObject a &
     A.goRange .~ (Just $ bytesRange start end)
@@ -601,18 +602,18 @@ downloadWithRange a start end dest = exceptionRetry 5 $ do
     runResourceT $ source $$+- sink
     closeFd fd
   where
-    exceptionRetry :: Int -> AWS a -> AWS a
-    exceptionRetry rcount action = do
-      eea <- try action
-      case eea of
-        Right res -> pure res
-        Left e
-          | rcount <= 1 -> throwM e
-          | otherwise -> do
-             liftIO $ do
-                putStrLn $ mconcat [ "\n----------------------\nRetrying (", show rcount, " remaining) range ", show start, " ", show end, " after :\n", show (e :: IOException)]
-                threadDelay $ 10 * 1000 * 1000
-             exceptionRetry (rcount - 1) action
+    exceptionRetry :: (MonadCatch m, MonadMask m, MonadIO m) => RetryPolicyM m -> Int -> m a -> m a
+    exceptionRetry policy n action = do
+      let
+        condition s =
+          Handler $ \(_ :: IOException) ->
+            pure $ rsIterNumber s <= n
+
+      recovering policy [condition] $ \_ -> do
+        liftIO . putStrLn$ mconcat [ "Retrying : ", show start, " ", show end ]
+        action
+
+
 
 listMultipartParts :: Address -> Text -> AWS [Part]
 listMultipartParts a uploadId = do
