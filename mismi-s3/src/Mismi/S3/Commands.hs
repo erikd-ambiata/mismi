@@ -591,7 +591,7 @@ thirySeconds :: Int
 thirySeconds = 30 * 1000 * 1000
 
 downloadWithRange :: HasCallStack => Address -> Int -> Int -> FilePath -> AWS ()
-downloadWithRange a start end dest = ioExceptionRetry (fullJitterBackoff thirySeconds) 5 $ do
+downloadWithRange a start end dest = ioExceptionRetry (fullJitterBackoff thirySeconds) 3 $ withRetries 5 $ do
 
   r <- send $ f' A.getObject a &
     A.goRange .~ (Just $ bytesRange start end)
