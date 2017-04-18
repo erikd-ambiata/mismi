@@ -122,8 +122,6 @@ import           X.Control.Monad.Trans.Either (EitherT, eitherT, left, right, bi
 
 import qualified X.Data.Conduit.Binary as XB
 
-import           GHC.Stack
-
 headObject :: Address -> AWS (Maybe HeadObjectResponse)
 headObject a =
   handle404 . send . f' A.headObject $ a
@@ -545,7 +543,7 @@ hoistDownloadError e =
     MultipartError (BlowUpError a) ->
       throwM a
 
-download :: HasCallStack => Address -> FilePath -> EitherT DownloadError AWS ()
+download :: Address -> FilePath -> EitherT DownloadError AWS ()
 download =
   downloadWithMode Fail
 
@@ -553,7 +551,7 @@ downloadOrFail :: Address -> FilePath -> AWS ()
 downloadOrFail a f =
   eitherT hoistDownloadError pure $ download a f
 
-downloadWithMode :: HasCallStack => WriteMode -> Address -> FilePath -> EitherT DownloadError AWS ()
+downloadWithMode :: WriteMode -> Address -> FilePath -> EitherT DownloadError AWS ()
 downloadWithMode mode a f = do
   when (mode == Fail) . whenM (liftIO $ doesFileExist f) . left $ DownloadDestinationExists f
   liftIO $ createDirectoryIfMissing True (takeDirectory f)
@@ -565,7 +563,7 @@ downloadWithMode mode a f = do
     then multipartDownload a f sz 100 100
     else downloadSingle a f
 
-downloadWithModeOrFail :: HasCallStack => WriteMode -> Address -> FilePath -> AWS ()
+downloadWithModeOrFail :: WriteMode -> Address -> FilePath -> AWS ()
 downloadWithModeOrFail m a f =
   eitherT hoistDownloadError pure $ downloadWithMode m a f
 
@@ -575,7 +573,7 @@ downloadSingle a f = do
   liftIO . withRetries 5 . withFileSafe f $ \p ->
     runResourceT . ($$+- sinkFile p) $ r ^. A.gorsBody ^. to _streamBody
 
-multipartDownload :: HasCallStack => Address -> FilePath -> Int -> Integer -> Int -> EitherT DownloadError AWS ()
+multipartDownload :: Address -> FilePath -> Int -> Integer -> Int -> EitherT DownloadError AWS ()
 multipartDownload source destination sz chunk fork = bimapEitherT MultipartError id $ do
   e <- ask
   let chunks = calculateChunks sz (fromInteger $ chunk * 1024 * 1024)
@@ -590,32 +588,37 @@ multipartDownload source destination sz chunk fork = bimapEitherT MultipartError
 thirySeconds :: Int
 thirySeconds = 30 * 1000 * 1000
 
-downloadWithRange :: HasCallStack => Address -> Int -> Int -> FilePath -> AWS ()
-downloadWithRange a start end dest = ioExceptionRetry (fullJitterBackoff thirySeconds) 3 $ withRetries 5 $ do
+downloadWithRange :: Address -> Int -> Int -> FilePath -> AWS ()
+downloadWithRange a start end dest =
+  -- Here we retry IOExceptions that escape from http-client/http-conduit.
+  ioExceptionRetry (fullJitterBackoff thirySeconds) 5 $
+    -- Here we retry `HttpException`s from http-client/http-conduit.
+    withRetries 5 $ do
 
-  r <- send $ f' A.getObject a &
-    A.goRange .~ (Just $ bytesRange start end)
+      r <- send $ f' A.getObject a &
+            A.goRange .~ (Just $ bytesRange start end)
 
-  -- write to file
-  liftIO $ do
-    fd <- openFd dest WriteOnly Nothing defaultFileFlags
-    void $ fdSeek fd AbsoluteSeek (fromInteger . toInteger $ start)
-    let source = r ^. A.gorsBody ^. to _streamBody
-    let sink = awaitForever $ liftIO . UBS.fdWrite fd
-    runResourceT $ source $$+- sink
-    closeFd fd
+      -- write to file
+      liftIO $ do
+        fd <- openFd dest WriteOnly Nothing defaultFileFlags
+        void $ fdSeek fd AbsoluteSeek (fromInteger . toInteger $ start)
+        let source = r ^. A.gorsBody ^. to _streamBody
+        let sink = awaitForever $ liftIO . UBS.fdWrite fd
+        runResourceT $ source $$+- sink
+        closeFd fd
   where
+    -- Run the provided `action` and if it throws an `IOException` retry it according
+    -- to the provided retry policy and retry count.
     ioExceptionRetry :: (MonadCatch m, MonadMask m, MonadIO m) => RetryPolicyM m -> Int -> m a -> m a
     ioExceptionRetry policy n action = do
       let
         condition s =
           Handler $ \(_ :: IOException) -> do
-            liftIO . putStrLn$ mconcat [ "Retry ", show (rsIterNumber s), " : ", show start, " ", show end ]
-            pure $ rsIterNumber s <= n
+            liftIO . putStrLn $ mconcat [ "Retry ", show s, " : ", show start ]
+            pure $ rsIterNumber s < n
 
       recovering policy [condition] $ \_ ->
         action
-
 
 
 listMultipartParts :: Address -> Text -> AWS [Part]
