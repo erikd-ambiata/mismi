@@ -606,11 +606,11 @@ downloadWithRange a start end dest = exceptionRetry (fullJitterBackoff 500000) 5
     exceptionRetry policy n action = do
       let
         condition s =
-          Handler $ \(_ :: IOException) ->
+          Handler $ \(_ :: IOException) -> do
+            liftIO . putStrLn$ mconcat [ "Retrying : ", show start, " ", show end ]
             pure $ rsIterNumber s <= n
 
-      recovering policy [condition] $ \_ -> do
-        liftIO . putStrLn$ mconcat [ "Retrying : ", show start, " ", show end ]
+      recovering policy [condition] $ \_ ->
         action
 
 
