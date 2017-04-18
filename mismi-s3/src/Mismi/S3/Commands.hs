@@ -62,8 +62,9 @@ module Mismi.S3.Commands (
 
 import           Control.Arrow ((***))
 
+import           Control.Exception (SomeException)
 import           Control.Lens ((.~), (^.), to, view)
-import           Control.Monad.Catch (throwM, onException)
+import           Control.Monad.Catch (throwM, onException, try)
 import           Control.Monad.Trans.Class (lift)
 import           Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import           Control.Monad.Reader (ask)
@@ -583,8 +584,9 @@ multipartDownload source destination sz chunk fork = bimapEitherT MultipartError
         runEitherT . runAWS e $ downloadWithRange source o (o + c) f
 
 downloadWithRange :: Address -> Int -> Int -> FilePath -> AWS ()
-downloadWithRange a start end dest = withRetries 5 $ do
-  liftIO . putStrLn $ mconcat ["downloadWithRange: ", show a, " ", show start, " ", show end]
+downloadWithRange a start end dest = exceptionRetry 5 $ do
+
+  liftIO . putStrLn $ mconcat ["downloadWithRange: ", show start, " ", show end]
   r <- send $ f' A.getObject a &
     A.goRange .~ (Just $ bytesRange start end)
 
@@ -597,6 +599,16 @@ downloadWithRange a start end dest = withRetries 5 $ do
     runResourceT $ source $$+- sink
     closeFd fd
 
+exceptionRetry :: Int -> AWS a -> AWS a
+exceptionRetry count action = do
+  eea <- try action
+  case eea of
+    Right a -> pure a
+    Left e
+      | count <= 1 -> throwM e
+      | otherwise -> do
+             liftIO . putStrLn $ "Retrying after :" <> show (e :: SomeException)
+             exceptionRetry (count - 1) action
 
 listMultipartParts :: Address -> Text -> AWS [Part]
 listMultipartParts a uploadId = do
