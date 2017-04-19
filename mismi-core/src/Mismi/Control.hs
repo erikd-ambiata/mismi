@@ -32,6 +32,7 @@ module Mismi.Control (
   , withRetriesOf
   ) where
 
+import           Control.Exception (IOException)
 import           Control.Lens ((.~), (^.), (^?), over)
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
@@ -129,14 +130,20 @@ withRetries =
 withRetriesOf :: (MonadCatch m, MonadMask m, MonadIO m) => RetryPolicyM m -> Int -> m a -> m a
 withRetriesOf policy n action = do
   let
-    condition s =
-      Handler $ \(e :: HttpException) ->
+    httpCondition s =
+      Handler $ \(e :: HttpException) -> do
+        liftIO . putStrLn $ "HTTP " <> show s
         pure $
           if rsIterNumber s > n
             then False
             else checkException e False
 
-  recovering policy [condition] $ \_ ->
+    ioCondition s =
+      Handler $ \(_ :: IOException) -> do
+        liftIO . putStrLn $ "IO   " <> show s
+        pure $ rsIterNumber s < n
+
+  recovering policy [httpCondition, ioCondition] $ \_ ->
     action
 
 configureRetries :: Int -> Env -> Env
@@ -147,7 +154,7 @@ configureRetries i e = e & envRetryCheck .~ err
       checkException v $ (e ^. envRetryCheck) c v
 
 checkException :: HttpException -> Bool -> Bool
-checkException v _f =
+checkException v f =
   case v of
     InvalidUrlException _ _ -> False
     HttpExceptionRequest _req content ->
@@ -195,8 +202,8 @@ checkException v _f =
         ConnectionClosed ->
           True
 
---        _ ->
---          trace ("checkException: " <> show content) f
+        _ ->
+          trace ("checkException: " <> show content) f
 
 handle404 :: AWS a -> AWS (Maybe a)
 handle404 =

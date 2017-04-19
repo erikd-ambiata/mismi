@@ -62,15 +62,12 @@ module Mismi.S3.Commands (
 
 import           Control.Arrow ((***))
 
-import           Control.Exception (IOException)
 import           Control.Lens ((.~), (^.), to, view)
-import           Control.Monad.Catch (Handler (..), MonadCatch, MonadMask, throwM, onException)
-import           Control.Monad.IO.Class (MonadIO)
+import           Control.Monad.Catch (throwM, onException)
 import           Control.Monad.Trans.Class (lift)
 import           Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import           Control.Monad.Reader (ask)
 import           Control.Monad.IO.Class (liftIO)
-import           Control.Retry (RetryPolicyM, fullJitterBackoff, recovering, rsIterNumber)
 
 import qualified Data.ByteString as BS
 import           Data.Conduit (Conduit, Source, ResumableSource)
@@ -108,7 +105,7 @@ import qualified Network.AWS.S3 as A
 
 import           P
 
-import           System.IO (IO, IOMode (..), SeekMode (..), putStrLn)
+import           System.IO (IO, IOMode (..), SeekMode (..))
 import           System.IO (hFileSize, hSetFileSize, withFile)
 import           System.Directory (createDirectoryIfMissing, doesFileExist)
 import           System.FilePath (FilePath, takeDirectory)
@@ -585,40 +582,19 @@ multipartDownload source destination sz chunk fork = bimapEitherT MultipartError
       consume (\q -> mapM (writeQueue q) chunks) fork $ \(o, c, _) ->
         runEitherT . runAWS e $ downloadWithRange source o (o + c) f
 
-thirySeconds :: Int
-thirySeconds = 30 * 1000 * 1000
-
 downloadWithRange :: Address -> Int -> Int -> FilePath -> AWS ()
-downloadWithRange a start end dest =
-  -- Here we retry `HttpException`s from http-client/http-conduit.
-  withRetries 5 $
-    -- Here we retry IOExceptions that escape from http-client/http-conduit.
-    ioExceptionRetry (fullJitterBackoff thirySeconds) 5 $ do
+downloadWithRange a start end dest = withRetries 5 $ do
+  r <- send $ f' A.getObject a &
+    A.goRange .~ (Just $ bytesRange start end)
 
-      r <- send $ f' A.getObject a &
-            A.goRange .~ (Just $ bytesRange start end)
-
-      -- write to file
-      liftIO $ do
-        fd <- openFd dest WriteOnly Nothing defaultFileFlags
-        void $ fdSeek fd AbsoluteSeek (fromInteger . toInteger $ start)
-        let source = r ^. A.gorsBody ^. to _streamBody
-        let sink = awaitForever $ liftIO . UBS.fdWrite fd
-        runResourceT $ source $$+- sink
-        closeFd fd
-  where
-    -- Run the provided `action` and if it throws an `IOException` retry it according
-    -- to the provided retry policy and retry count.
-    ioExceptionRetry :: (MonadCatch m, MonadMask m, MonadIO m) => RetryPolicyM m -> Int -> m a -> m a
-    ioExceptionRetry policy n action = do
-      let
-        condition s =
-          Handler $ \(_ :: IOException) -> do
-            liftIO . putStrLn $ mconcat [ "Retry ", show s, " : ", show start ]
-            pure $ rsIterNumber s < n
-
-      recovering policy [condition] $ \_ ->
-        action
+  -- write to file
+  liftIO $ do
+    fd <- openFd dest WriteOnly Nothing defaultFileFlags
+    void $ fdSeek fd AbsoluteSeek (fromInteger . toInteger $ start)
+    let source = r ^. A.gorsBody ^. to _streamBody
+    let sink = awaitForever $ liftIO . UBS.fdWrite fd
+    runResourceT $ source $$+- sink
+    closeFd fd
 
 
 listMultipartParts :: Address -> Text -> AWS [Part]
