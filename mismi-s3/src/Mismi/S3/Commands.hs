@@ -597,7 +597,8 @@ downloadWithRange a start end dest = withRetries 5 $ do
 
   where
     downHelper =
-      -- 5 minutes.
+      -- Ten minutes. Arrivied at empirically. With a timeout of 5 minutes this
+      -- was triggering too often. Want this to be the last resort.
       timeout (10 * 60 * 1000 * 1000) $ do
         r <- send $ f' A.getObject a &
           A.goRange .~ (Just $ bytesRange start end)
