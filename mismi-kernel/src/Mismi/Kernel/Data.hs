@@ -12,6 +12,7 @@ import           P
 -- | Mismi's view of available AWS regions.
 data MismiRegion =
     IrelandRegion         -- ^ Europe / eu-west-1
+  | LondonRegion          -- ^ Europe / eu-west-2
   | FrankfurtRegion       -- ^ Europe / eu-central-1
   | TokyoRegion           -- ^ Asia Pacific / ap-northeast-1
   | SeoulRegion           -- ^ Asia Pacific / ap-northeast-2
@@ -26,6 +27,7 @@ data MismiRegion =
   | GovCloudRegion        -- ^ AWS GovCloud / us-gov-west-1
   | GovCloudFIPSRegion    -- ^ AWS GovCloud (FIPS 140-2) S3 Only / fips-us-gov-west-1
   | SaoPauloRegion        -- ^ South America / sa-east-1
+  | MontrealRegion        -- ^ Canada Central / ca-central-1
     deriving (Eq, Ord, Read, Show, Enum, Bounded)
 
 
@@ -35,6 +37,8 @@ renderMismiRegion r =
   case r of
     IrelandRegion ->
       "eu-west-1"
+    LondonRegion ->
+      "eu-west-2"
     FrankfurtRegion ->
       "eu-central-1"
     TokyoRegion ->
@@ -63,12 +67,16 @@ renderMismiRegion r =
       "fips-us-gov-west-1"
     SaoPauloRegion ->
       "sa-east-1"
+    MontrealRegion ->
+       "ca-central-1"
 
 parseMismiRegion :: Text -> Maybe MismiRegion
 parseMismiRegion t =
   case t of
     "eu-west-1" ->
       Just IrelandRegion
+    "eu-west-2" ->
+      Just LondonRegion
     "eu-central-1" ->
       Just FrankfurtRegion
     "ap-northeast-1" ->
@@ -97,5 +105,7 @@ parseMismiRegion t =
       Just GovCloudFIPSRegion
     "sa-east-1" ->
       Just SaoPauloRegion
+    "ca-central-1" ->
+      Just MontrealRegion
     _ ->
       Nothing
