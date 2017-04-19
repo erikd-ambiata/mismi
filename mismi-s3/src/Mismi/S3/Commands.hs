@@ -62,6 +62,7 @@ module Mismi.S3.Commands (
 
 import           Control.Arrow ((***))
 
+import           Control.Exception (ioError)
 import           Control.Lens ((.~), (^.), to, view)
 import           Control.Monad.Catch (throwM, onException)
 import           Control.Monad.Trans.Class (lift)
@@ -106,11 +107,14 @@ import qualified Network.AWS.S3 as A
 import           P
 
 import           System.IO (IO, IOMode (..), SeekMode (..))
-import           System.IO (hFileSize, hSetFileSize, withFile)
+import           System.IO (hFileSize, hSetFileSize, withFile, putStrLn)
 import           System.Directory (createDirectoryIfMissing, doesFileExist)
 import           System.FilePath (FilePath, takeDirectory)
 import           System.Posix.IO (OpenMode(..), openFd, closeFd, fdSeek, defaultFileFlags)
 import qualified "unix-bytestring" System.Posix.IO.ByteString as UBS
+
+import           System.Timeout.Lifted (timeout)
+import           System.IO.Error (userError)
 
 import           Twine.Data.Queue (writeQueue)
 import           Twine.Parallel (RunError (..), consume)
@@ -584,16 +588,27 @@ multipartDownload source destination sz chunk fork = bimapEitherT MultipartError
 
 downloadWithRange :: Address -> Int -> Int -> FilePath -> AWS ()
 downloadWithRange a start end dest = withRetries 5 $ do
-  r <- send $ f' A.getObject a &
-    A.goRange .~ (Just $ bytesRange start end)
+  res <- downHelper
+  case res of
+    Just () -> pure ()
+    Nothing -> liftIO $ do
+                putStrLn $ "Timeout on block starting at " <> show start
+                ioError (userError "downloadWithRange timeout")
 
-  -- write to file
-  liftIO . runResourceT $ do
-    fd <- snd <$> allocate (openFd dest WriteOnly Nothing defaultFileFlags) closeFd
-    void . liftIO $ fdSeek fd AbsoluteSeek (fromInteger . toInteger $ start)
-    let source = r ^. A.gorsBody ^. to _streamBody
-    let sink = awaitForever $ liftIO . UBS.fdWrite fd
-    source $$+- sink
+  where
+    downHelper =
+      -- 5 minutes.
+      timeout (5 * 60 * 1000 * 1000) $ do
+        r <- send $ f' A.getObject a &
+          A.goRange .~ (Just $ bytesRange start end)
+
+        -- write to file
+        liftIO . runResourceT $ do
+          fd <- snd <$> allocate (openFd dest WriteOnly Nothing defaultFileFlags) closeFd
+          void . liftIO $ fdSeek fd AbsoluteSeek (fromInteger . toInteger $ start)
+          let source = r ^. A.gorsBody ^. to _streamBody
+          let sink = awaitForever $ liftIO . UBS.fdWrite fd
+          source $$+- sink
 
 
 listMultipartParts :: Address -> Text -> AWS [Part]
