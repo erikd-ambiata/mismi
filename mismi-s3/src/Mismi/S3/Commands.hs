@@ -598,7 +598,7 @@ downloadWithRange a start end dest = withRetries 5 $ do
   where
     downHelper =
       -- 5 minutes.
-      timeout (5 * 60 * 1000 * 1000) $ do
+      timeout (10 * 60 * 1000 * 1000) $ do
         r <- send $ f' A.getObject a &
           A.goRange .~ (Just $ bytesRange start end)
 
